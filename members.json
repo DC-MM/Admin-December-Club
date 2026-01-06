@@ -1,1 +1,12 @@
-Admin Members Panel – coming soon
+{
+  "0000": {
+    "name": "Owner",
+    "category": "private",
+    "active": true
+  },
+  "1234": {
+    "name": "Member One",
+    "category": "member",
+    "active": true
+  }
+}
