@@ -158,6 +158,9 @@
       background: rgba(255,255,255,.30);
     }
     .hidden{ display:none !important; }
+
+    /* صغير للروابط الحالية للـPDF */
+    .tinyLink{ font-size:12px; display:inline-block; margin-top:4px; }
   </style>
 </head>
 
@@ -262,11 +265,14 @@
               </div>
             </div>
 
-            <label class="muted" style="margin-top:8px;">Passport URL (admin)</label>
-            <input id="f_passport_url" type="text" placeholder="https://..." />
+            <!-- تغيّر: رفع PDF بدل روابط -->
+            <label class="muted" style="margin-top:8px;">Passport PDF (admin upload)</label>
+            <input id="f_passport_pdf" type="file" accept="application/pdf" />
+            <a id="passport_current" class="tinyLink hidden" href="#" target="_blank">View current passport</a>
 
-            <label class="muted" style="margin-top:8px;">Signed Terms URL (admin)</label>
-            <input id="f_terms_url" type="text" placeholder="https://..." />
+            <label class="muted" style="margin-top:8px;">Signed Terms PDF (admin upload)</label>
+            <input id="f_terms_pdf" type="file" accept="application/pdf" />
+            <a id="terms_current" class="tinyLink hidden" href="#" target="_blank">View current signed terms</a>
 
             <label class="muted" style="margin-top:8px;">Notes</label>
             <textarea id="f_notes" placeholder="Notes..."></textarea>
@@ -400,7 +406,7 @@
 
   <script>
     // ---------------------------
-    // Admin guard (kept as-is)
+    // Admin guard
     // ---------------------------
     if(sessionStorage.getItem("dc_admin_ok") !== "1"){
       window.location.href = "login.html";
@@ -492,7 +498,6 @@
     }
 
     function statusFromBooleans(m){
-      // for backward compatibility with old json
       if(m.status) return m.status;
       if(m.banned) return "Banned";
       if(m.active === false) return "Inactivated";
@@ -591,7 +596,6 @@
         m.banned = flags.banned;
 
         m.updated_at = nowISO();
-        // auto tier
         m.tier = tierFromCategory(m.category || "member");
 
         membersMap[id] = m;
@@ -622,9 +626,24 @@
       $("f_country").value = m.country || "";
       $("f_category").value = m.category || "member";
       $("f_status").value = s || "Activated";
-      $("f_passport_url").value = m.passport_url || m.passport_front_url || "";
-      $("f_terms_url").value = m.terms_url || m.protocol_signed_url || "";
       $("f_notes").value = m.notes || "";
+
+      // ملفات PDF الحالية (إن وجدت) تُعرض كرابط
+      const passA = $("passport_current");
+      const termsA = $("terms_current");
+      passA.classList.add("hidden");
+      termsA.classList.add("hidden");
+      $("f_passport_pdf").value = "";
+      $("f_terms_pdf").value   = "";
+
+      if(m.passport_pdf){
+        passA.href = m.passport_pdf;
+        passA.classList.remove("hidden");
+      }
+      if(m.terms_pdf){
+        termsA.href = m.terms_pdf;
+        termsA.classList.remove("hidden");
+      }
     }
 
     function clearForm(){
@@ -634,22 +653,41 @@
       $("f_country").value = "";
       $("f_category").value = "member";
       $("f_status").value = "Activated";
-      $("f_passport_url").value = "";
-      $("f_terms_url").value = "";
       $("f_notes").value = "";
+      $("f_passport_pdf").value = "";
+      $("f_terms_pdf").value = "";
+      $("passport_current").classList.add("hidden");
+      $("terms_current").classList.add("hidden");
       hideMsg($("editMsg"));
     }
 
     $("clearBtn").addEventListener("click", clearForm);
 
+    // helper: read file as data URL
+    function readAsDataURL(file){
+      return new Promise((resolve, reject)=>{
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = reject;
+        fr.readAsDataURL(file);
+      });
+    }
+
     // Save / Update
-    $("editorForm").addEventListener("submit", (e) => {
+    $("editorForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       hideMsg($("editMsg"));
 
       const member_number = String($("f_number").value || "").trim();
+
       if(!member_number){
         showMsg($("editMsg"), "Member number is required.", true);
+        return;
+      }
+
+      // ✅ تحقق 9 أرقام (مع استثناء 0000)
+      if(member_number !== "0000" && !/^[0-9]{9}$/.test(member_number)){
+        showMsg($("editMsg"), "Member number must be exactly 9 digits.", true);
         return;
       }
 
@@ -662,18 +700,36 @@
       const category = $("f_category").value;
       const tier = tierFromCategory(category);
 
+      // اقرأ ملفات PDF إن وُجدت (وإلا احتفظ بالسابق)
+      let passport_pdf = prev.passport_pdf || "";
+      let terms_pdf    = prev.terms_pdf || "";
+
+      const passFile = $("f_passport_pdf").files?.[0];
+      const termsFile= $("f_terms_pdf").files?.[0];
+
+      if(passFile){
+        try{ passport_pdf = await readAsDataURL(passFile); }catch{}
+      }
+      if(termsFile){
+        try{ terms_pdf = await readAsDataURL(termsFile); }catch{}
+      }
+
+      // اسم المالك مثبت
+      let full_name = ($("f_name").value || "").trim();
+      if(member_number === "0000"){ full_name = "M. Mavros"; }
+
       const payload = {
         member_number,
-        full_name: ($("f_name").value || "").trim(),
+        full_name,
         email: ($("f_email").value || "").trim(),
         country: ($("f_country").value || "").trim(),
         category,
-        tier,                // auto from category
-        status,              // single status text
-        active: flags.active, // kept for compatibility
-        banned: flags.banned, // kept for compatibility
-        passport_url: ($("f_passport_url").value || "").trim(),
-        terms_url: ($("f_terms_url").value || "").trim(),
+        tier,                 // auto from category
+        status,               // single status text
+        active: flags.active, // compatibility
+        banned: flags.banned, // compatibility
+        passport_pdf,         // ✅ PDF كـ Data URL
+        terms_pdf,            // ✅ PDF كـ Data URL
         notes: ($("f_notes").value || "").trim(),
         created_at: prev.created_at || nowISO(),
         updated_at: nowISO()
@@ -711,10 +767,8 @@
         membersMap = data || {};
         for(const key of Object.keys(membersMap)){
           if(!membersMap[key].member_number) membersMap[key].member_number = key;
-          // normalize tier from category
           const c = membersMap[key].category || "member";
           membersMap[key].tier = tierFromCategory(c);
-          // normalize status
           membersMap[key].status = statusFromBooleans(membersMap[key]);
         }
         render();
@@ -726,7 +780,7 @@
       }
     });
 
-    // Other tabs: simple actions
+    // Other tabs: placeholders
     $("inv_send").addEventListener("click", ()=>{
       showMsg($("invMsg"), "Invitation saved (placeholder).", false);
     });
