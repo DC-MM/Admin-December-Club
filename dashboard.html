@@ -159,7 +159,6 @@
     }
     .hidden{ display:none !important; }
 
-    /* صغير للروابط الحالية للـPDF */
     .tinyLink{ font-size:12px; display:inline-block; margin-top:4px; }
   </style>
 </head>
@@ -184,12 +183,9 @@
       <button class="tabBtn" data-tab="tabSubscription">Subscription</button>
     </div>
 
-    <!-- ===================== -->
     <!-- TAB: MEMBERS -->
-    <!-- ===================== -->
     <div id="tabMembers">
       <div class="grid">
-        <!-- LEFT: Members list -->
         <section class="card">
           <div class="toolbar">
             <div class="filters">
@@ -222,7 +218,6 @@
           <div class="msg" id="listMsg"></div>
         </section>
 
-        <!-- RIGHT: Editor -->
         <section class="card">
           <h3 style="margin:0 0 8px;">Add / Edit Member</h3>
           <div class="muted">Tip: owner number is protected from delete.</div>
@@ -265,14 +260,13 @@
               </div>
             </div>
 
-            <!-- تغيّر: رفع PDF بدل روابط -->
             <label class="muted" style="margin-top:8px;">Passport PDF (admin upload)</label>
             <input id="f_passport_pdf" type="file" accept="application/pdf" />
-            <a id="passport_current" class="tinyLink hidden" href="#" target="_blank">View current passport</a>
+            <a id="passport_current" class="tinyLink hidden" href="#" target="_blank" rel="noopener">View current passport</a>
 
             <label class="muted" style="margin-top:8px;">Signed Terms PDF (admin upload)</label>
             <input id="f_terms_pdf" type="file" accept="application/pdf" />
-            <a id="terms_current" class="tinyLink hidden" href="#" target="_blank">View current signed terms</a>
+            <a id="terms_current" class="tinyLink hidden" href="#" target="_blank" rel="noopener">View current signed terms</a>
 
             <label class="muted" style="margin-top:8px;">Notes</label>
             <textarea id="f_notes" placeholder="Notes..."></textarea>
@@ -298,9 +292,7 @@
       </div>
     </div>
 
-    <!-- ===================== -->
     <!-- TAB: INVITATIONS -->
-    <!-- ===================== -->
     <div id="tabInvites" class="hidden">
       <section class="card">
         <h3 style="margin:0 0 8px;">Invitations</h3>
@@ -326,9 +318,7 @@
       </section>
     </div>
 
-    <!-- ===================== -->
     <!-- TAB: MEETINGS -->
-    <!-- ===================== -->
     <div id="tabMeetings" class="hidden">
       <section class="card">
         <h3 style="margin:0 0 8px;">Meetings</h3>
@@ -354,9 +344,7 @@
       </section>
     </div>
 
-    <!-- ===================== -->
     <!-- TAB: DONATIONS -->
-    <!-- ===================== -->
     <div id="tabDonations" class="hidden">
       <section class="card">
         <h3 style="margin:0 0 8px;">Donations</h3>
@@ -382,9 +370,7 @@
       </section>
     </div>
 
-    <!-- ===================== -->
     <!-- TAB: SUBSCRIPTION -->
-    <!-- ===================== -->
     <div id="tabSubscription" class="hidden">
       <section class="card">
         <h3 style="margin:0 0 8px;">Subscription</h3>
@@ -405,9 +391,7 @@
   </div>
 
   <script>
-    // ---------------------------
     // Admin guard
-    // ---------------------------
     if(sessionStorage.getItem("dc_admin_ok") !== "1"){
       window.location.href = "login.html";
     }
@@ -430,9 +414,7 @@
       window.location.href = "login.html";
     });
 
-    // ---------------------------
     // Tabs
-    // ---------------------------
     document.querySelectorAll(".tabBtn").forEach(btn=>{
       btn.addEventListener("click", ()=>{
         document.querySelectorAll(".tabBtn").forEach(b=>b.classList.remove("active"));
@@ -445,17 +427,31 @@
       });
     });
 
-    // ---------------------------
     // Data (in-memory)
-    // ---------------------------
     let membersMap = {};
     let activeFilter = "all";
     let searchText = "";
+
+    const OWNER_ID = "0000";
+    const OWNER_NAME = "M. Mavros";
 
     function tierFromCategory(category){
       if(category === "private") return "black";
       if(category === "elite") return "wine";
       return "gold";
+    }
+
+    function forceOwnerRecord(){
+      if(!membersMap[OWNER_ID]) membersMap[OWNER_ID] = { member_number: OWNER_ID };
+      membersMap[OWNER_ID].member_number = OWNER_ID;
+      membersMap[OWNER_ID].full_name = OWNER_NAME;
+      membersMap[OWNER_ID].category = membersMap[OWNER_ID].category || "private";
+      membersMap[OWNER_ID].tier = tierFromCategory(membersMap[OWNER_ID].category || "private");
+      membersMap[OWNER_ID].status = membersMap[OWNER_ID].status || "Activated";
+      if(typeof membersMap[OWNER_ID].active === "undefined") membersMap[OWNER_ID].active = true;
+      if(typeof membersMap[OWNER_ID].banned === "undefined") membersMap[OWNER_ID].banned = false;
+      membersMap[OWNER_ID].created_at = membersMap[OWNER_ID].created_at || new Date().toISOString();
+      membersMap[OWNER_ID].updated_at = new Date().toISOString();
     }
 
     async function loadMembers(){
@@ -465,10 +461,10 @@
         if(!res.ok) throw new Error("members.json not found");
         const data = await res.json();
         membersMap = data || {};
-        // normalize keys
         for(const key of Object.keys(membersMap)){
           if(!membersMap[key].member_number) membersMap[key].member_number = key;
         }
+        forceOwnerRecord(); // ✅ owner forced on load
         render();
       }catch(e){
         showMsg($("listMsg"), "Cannot load members.json. Make sure it exists in the repo root.", true);
@@ -511,6 +507,8 @@
     }
 
     function render(){
+      forceOwnerRecord(); // ✅ owner forced before rendering
+
       const tbody = $("membersTbody");
       tbody.innerHTML = "";
 
@@ -527,8 +525,12 @@
         const m = { ...m0 };
         m.status = statusFromBooleans(m);
 
+        if(String(m.member_number) === OWNER_ID){
+          m.full_name = OWNER_NAME; // ✅ owner forced in UI
+        }
+
         const tr = document.createElement("tr");
-        const protectedOwner = (String(m.member_number) === "0000");
+        const protectedOwner = (String(m.member_number) === OWNER_ID);
 
         tr.innerHTML = `
           <td><span class="tag">${m.member_number}</span></td>
@@ -599,18 +601,20 @@
         m.tier = tierFromCategory(m.category || "member");
 
         membersMap[id] = m;
+        forceOwnerRecord();
         render();
         showMsg($("listMsg"), `Updated status for ${id}. Don't forget Export.`, false);
       }
 
       if(act === "delete"){
-        if(id === "0000"){
+        if(id === OWNER_ID){
           showMsg($("listMsg"), "Owner (0000) cannot be deleted.", true);
           return;
         }
         const ok = confirm(`Delete member ${id}?`);
         if(!ok) return;
         delete membersMap[id];
+        forceOwnerRecord();
         render();
         showMsg($("listMsg"), `Deleted ${id}. Don't forget Export.`, false);
       }
@@ -628,7 +632,10 @@
       $("f_status").value = s || "Activated";
       $("f_notes").value = m.notes || "";
 
-      // ملفات PDF الحالية (إن وجدت) تُعرض كرابط
+      if(String(m.member_number) === OWNER_ID){
+        $("f_name").value = OWNER_NAME; // ✅ force in form
+      }
+
       const passA = $("passport_current");
       const termsA = $("terms_current");
       passA.classList.add("hidden");
@@ -685,8 +692,8 @@
         return;
       }
 
-      // ✅ تحقق 9 أرقام (مع استثناء 0000)
-      if(member_number !== "0000" && !/^[0-9]{9}$/.test(member_number)){
+      // ✅ 9 digits required, except 0000
+      if(member_number !== OWNER_ID && !/^[0-9]{9}$/.test(member_number)){
         showMsg($("editMsg"), "Member number must be exactly 9 digits.", true);
         return;
       }
@@ -700,7 +707,6 @@
       const category = $("f_category").value;
       const tier = tierFromCategory(category);
 
-      // اقرأ ملفات PDF إن وُجدت (وإلا احتفظ بالسابق)
       let passport_pdf = prev.passport_pdf || "";
       let terms_pdf    = prev.terms_pdf || "";
 
@@ -714,9 +720,8 @@
         try{ terms_pdf = await readAsDataURL(termsFile); }catch{}
       }
 
-      // اسم المالك مثبت
       let full_name = ($("f_name").value || "").trim();
-      if(member_number === "0000"){ full_name = "M. Mavros"; }
+      if(member_number === OWNER_ID){ full_name = OWNER_NAME; }
 
       const payload = {
         member_number,
@@ -724,18 +729,19 @@
         email: ($("f_email").value || "").trim(),
         country: ($("f_country").value || "").trim(),
         category,
-        tier,                 // auto from category
-        status,               // single status text
-        active: flags.active, // compatibility
-        banned: flags.banned, // compatibility
-        passport_pdf,         // ✅ PDF كـ Data URL
-        terms_pdf,            // ✅ PDF كـ Data URL
+        tier,
+        status,
+        active: flags.active,
+        banned: flags.banned,
+        passport_pdf,
+        terms_pdf,
         notes: ($("f_notes").value || "").trim(),
         created_at: prev.created_at || nowISO(),
         updated_at: nowISO()
       };
 
       membersMap[member_number] = payload;
+      forceOwnerRecord();
       render();
 
       showMsg($("editMsg"), `${exists ? "Updated" : "Added"} member ${member_number}. Now click Export to save members.json.`, false);
@@ -743,6 +749,7 @@
 
     // Export JSON
     $("exportBtn").addEventListener("click", () => {
+      forceOwnerRecord();
       const json = JSON.stringify(membersMap, null, 2);
       const blob = new Blob([json], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -771,6 +778,7 @@
           membersMap[key].tier = tierFromCategory(c);
           membersMap[key].status = statusFromBooleans(membersMap[key]);
         }
+        forceOwnerRecord();
         render();
         showMsg($("listMsg"), "Imported members.json into the dashboard.", false);
       }catch(err){
